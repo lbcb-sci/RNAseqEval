@@ -43,9 +43,30 @@ Usage:
     
 Allowed options:
 
-    -a <file> : a reference annotation (GFF/GTF/BED) file
-    -o (--output) <file> : output file to which the report will be written
-    -ex (--expression) : if present, the script will also calculate and output gene expression data
+     -a <file> : a reference annotation (GFF/GTF/BED) file
+     -o (--output) <file> : output file to which the report will be written
+     -ex (--expression) : calculate and output gene expression
+     --no_check_strand : when matching alignments to annotations, do not take strand 
+                         into account, only chromosome and position
+     --no_per_base_stats : do not calculate per-base stats, such are percentage of
+                           matches, mismatches, inserts and deletes
+     -sqn (--save_query_names) : save query names for alignments that managed to hit an exon
+                                 and for contiguous alignments. Query names are saved to files
+                                 with filenames determined from output file. 
+                                 For this option output and annotation files must be specified
+     -ai (--alowed_inaccuracy) : A maximumn distance in bases between an annotation and an alignment
+                                 where the alignment is still considered correct (default 5)
+     -mo (--min_overlap) : A minimum overlap between an annotation and an alignment that is considered valid
+                           (default 5)
+     --graphmap : correct for a bug in GraphMap RNA mapping on reverse strand
+                   taken into account only when calculating the percentage of matches
+     --old_bma_calc : Calculate best matching annotation only based on maximizing the number of bases an alignment
+                      on an annotation. The number of bases outside an annotation is not take into account in this case
+     --leave_chrom_names : do not preprocess chromosome names in SAM, reference and annotation files
+                           Chromosome names are by default preprocessed to make them match the format "chr[designation]"
+     --calc_new_annotations: calculate potential new annotations, if a sufficient number of alignments (default 3)
+                             better fits a combination of exons then any existing annotation, that combination
+                             of exons is suggested as a new annotation
 
 ### eval-annotations
 Used in eval-annotations mode, RNAseqEval.py script will print out basic information on an annotations file.
