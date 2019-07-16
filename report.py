@@ -79,7 +79,16 @@ class EvalReport:
         self.allowed_inacc = 0
         self.sum_read_length = 0
         self.sum_bases_aligned = 0
-        self.percentage_bases_aligned = 0.0
+        self.percent_bases_aligned = 0.0
+
+        # Advanced mappin information for dfferent read categories
+        self.sum_read_length_correct = 0
+        self.sum_bases_aligned_correct = 0
+        self.percent_bases_aligned_correct = 0.0
+
+        self.sum_read_length_hitone = 0
+        self.sum_bases_aligned_hitone = 0
+        self.percent_bases_aligned_hitone = 0.0
 
         self.num_genes_covered = 0      # How many genes from the annotation file were
                                         # covered (intersected) by one or more alignments
@@ -231,10 +240,11 @@ class EvalReport:
             for pna in self.pot_new_annotations:
                 name = pna.genename
                 reportline = "\nName: %s\nBased on:%s\nStrand: %s\nNumber of reads: %d\n" % (pna.genename, pna.source, pna.strand, self.cna_count[name])
+                reportline += "Type:%s\n" % pna.transcriptname
                 reportline += "Reads:\n"
                 for rname in self.cna_readlist[name]:
                     reportline += "\n" + rname
-                reportline += "Items:\n"
+                reportline += "\nItems:"
                 for item in pna.items:
                     reportline += " [%d, %d]" % (item.start, item.end)
                 reportline += "\n"
@@ -314,6 +324,8 @@ class EvalReport:
             report += """\n
             Mapping quality information:
             Bases in reads (aligned / total) (percent) = (%d / %d) (%.2f%%)
+            Bases in reads (correct) (aligned / total) (percent) = (%d / %d) (%.2f%%)
+            Bases in reads (exon hit) (aligned / total) (percent) = (%d / %d) (%.2f%%)
             Transcripts covered / missed / total = %d / %d / %d
             Exons covered / missed / total = %d / %d / %d
             Total number of evaluated alignments = %d
@@ -325,7 +337,9 @@ class EvalReport:
             Alignments with a partial miss (not good / "almost "good) = %d / %d
             Contiguous / non contiguous alignments: %d (%.2f%%) / %d (%.2f%%)
             Hit all for real reads: %d (%.2f%%)
-            """ % (self.sum_bases_aligned, self.sum_read_length, self.percentage_bases_aligned, \
+            """ % (self.sum_bases_aligned, self.sum_read_length, self.percent_bases_aligned, \
+                   self.sum_bases_aligned_correct, self.sum_read_length_correct, self.percent_bases_aligned_correct, \
+                   self.sum_bases_aligned_hitone, self.sum_read_length_hitone, self.percent_bases_aligned_hitone, \
                    self.num_genes_covered, self.num_genes - self.num_genes_covered, self.num_genes, \
                    self.num_exons_covered, self.num_exons - self.num_exons_covered, self.num_exons, \
                    self.num_evaluated_alignments, \

@@ -26,7 +26,8 @@ import multiprocessing
 DISTANCE_THRESHOLD = 10000
 MIN_OVERLAP_BASES = 5
 NUM_PROCESS = 12
-NEW_ANNOTATION_MIN = 3
+NEW_ANNOTATION_MIN = 3      # A Minimum number of reads for new annotation to be proposed
+MIN_INTRON_SIZE = 5         # Used for detecting new annotations
 
 
 # TODO: Osim broja readova koji pokrivaju pojedini gen, izracunati i coverage
@@ -506,6 +507,15 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
     if '--old_bma_calc' in paramdict:
         old_bma_calc = True
 
+    per_base_stats = True
+    if '--no_per_base_stats' in paramdict:
+        per_base_stats = False
+
+    total_read_length_correct = 0
+    total_bases_aligned_correct = 0
+    total_read_length_hitone = 0
+    total_bases_aligned_hitone = 0
+
     num_hithalfbases = 0
 
     for samline_list in samlines:
@@ -546,6 +556,12 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
         # If all split alignments of the read were sorted according to position, this could be done faster
         readrefstart = -1
         readrefend = -1
+
+        # Calculate readlength from the first alignment (should be the same)
+        # and then see how many of those bases were actually aligned
+        readlength = samline_list[0].CalcReadLengthFromCigar()
+        basesaligned = 0
+        
         for samline in samline_list:
             # start = samline.pos
             start = samline.pos
@@ -556,6 +572,28 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
                 readrefstart = start
             if readrefend == -1 or readrefend < end:
                 readrefend = end
+
+            if per_base_stats:
+                # Using regular expressions to find repeating digit and skipping one character after that
+                # Used to separate CIGAR string into individual operations
+                # Using regular CIGAR, beacuse extended is not needed here
+                cigar = samline.cigar
+                pattern = '(\d+)(.)'
+                operations = re.findall(pattern, cigar)
+
+                for op in operations:
+                    if op[1] in ('M', '='):
+                        basesaligned += int(op[0])
+                    elif op[1] == 'I':
+                        basesaligned += int(op[0])
+                    elif op[1] == 'D':
+                        pass
+                    elif op[1] =='X':
+                        basesaligned += int(op[0])
+                    elif op[1] in ('N', 'S', 'H', 'P'):
+                        pass
+                    else:       # Should never happen
+                        sys.stderr.write('\nERROR: Invalid CIGAR string operation (%s)' % op[1])
 
         readreflength = readrefend - readrefstart
         startpos = readrefstart
@@ -785,7 +823,7 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
             if isSpliced:
                 report.num_possible_spliced_alignment += 1
 
-                # Calculating alignment start and end
+        # Calculating alignment start and end
         for samline in samline_list:
             # start = samline.pos
             start = samline.pos
@@ -802,7 +840,67 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
         endpos = readrefend
 
         # Checking for possible new annotations
-        # If the best_match_annotation does not produce a "correct" alignment, maybe it can be improved by combinig it 
+        # 1. If the best_match_annotation does not produce a "correct" alignment check if annotation caontains overly small
+        #    introns.
+        if calcNewAnnotations and best_match_annotation is not None and not isGood:
+            # Create a new annotation gtom the best match annotation, that removes short introns.
+            new_annotation = Annotation_formats.GeneDescription()
+            new_annotation.seqname = samline_list[0].qname
+            new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
+            new_annotation.source = best_match_annotation.genename
+            new_annotation.strand = best_match_annotation.strand
+            new_annotation.transcriptname = "SMALL INTRON DISCARDING"       # New annotation type
+            new_annotation.items = []
+            proposeNew = False
+            fused = False
+
+            # Fusing exons separated by very short introns
+            items = sorted(best_match_annotation.items, key = lambda it: it.start)
+            current_aitem = items[0]
+            for aitem in items[1:]:
+                if aitem.start - current_aitem.end < MIN_INTRON_SIZE:
+                    current_aitem.end = aitem.end
+                    fused = True
+                else:
+                    new_annotation.items.append(current_aitem)
+                    current_aitem = aitem
+
+            new_annotation.items.append(current_aitem)
+
+            if fused:
+                t_exonhitmap = {(i+1):0 for i in xrange(len(new_annotation.items))}
+                t_exoncompletemap = {(i+1):0 for i in xrange(len(new_annotation.items))}
+                t_exonstartmap = {(i+1):0 for i in xrange(len(new_annotation.items))}
+                t_exonendmap = {(i+1):0 for i in xrange(len(new_annotation.items))}
+
+                # Calculating hit maps for new fused annotation
+                for samline in samline_list:
+                    item_idx = 0
+                    lstartpos = samline.pos
+                    reflength = samline.CalcReferenceLengthFromCigar()
+                    lendpos = lstartpos + reflength
+                    exonhit = False
+                    for item in new_annotation.items:
+                        item_idx += 1
+                        if item.overlapsItem(lstartpos, lendpos):
+                            exonhit = True
+                            t_exonhitmap[item_idx] += 1
+                            if item.equalsItem(lstartpos, lendpos):
+                                t_exoncompletemap[item_idx] = 1
+                                t_exonstartmap[item_idx] = 1
+                                t_exonendmap[item_idx] = 1
+                            elif item.startsItem(lstartpos, lendpos):
+                                t_exonstartmap[item_idx] = 1
+                            elif item.endsItem(lstartpos, lendpos):
+                                t_exonendmap[item_idx] = 1
+
+                isGood, isSpliced = isGoodSplitAlignment(t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap)
+                if isGood:
+                    new_annotations.append(new_annotation)
+
+
+
+        # 2. If the best_match_annotation does not produce a "correct" alignment, maybe it can be improved by combinig it 
         # with other annotation from the candidate annotations set
         # For each exon that is not correctly aligned (first exon can have misaligned beginning and last exon can have 
         # misaligned end, other exons need to have correctly aligned beginning and end)
@@ -814,8 +912,9 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
             new_annotation = Annotation_formats.GeneDescription()
             new_annotation.seqname = samline_list[0].qname
             new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
-            new_annotation.source = "From: " + best_match_annotation.genename
+            new_annotation.source = best_match_annotation.genename
             new_annotation.strand = best_match_annotation.strand
+            new_annotation.transcriptname = "FUSED ANNOTATION"          # New annotation type
             new_annotation.items = []
             proposeNew = False      # Determines whether we want to propose a new annotation
 
@@ -852,9 +951,9 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
                 # If the replacement exon is found, place it in the new annotation, otherwise place old exon (if it exists)
                 if replacementFound:
                     new_annotation.items.append(newItem)
+                    proposeNew = True
                 elif ovlitem is not None:
                     new_annotation.items.append(ovlitem)
-                    proposeNew = True
 
             # Adding best match annotation exons that are after the alignment,to the new alignment
             for aitem in best_match_annotation.items:
@@ -934,6 +1033,14 @@ def eval_mapping_part(proc_id, samlines, annotations, paramdict, chromname2seq, 
             #     report.num_good_alignment += 1
             # else:
             #    report.num_bad_alignment += 1
+
+        if per_base_stats:
+            if isGood:
+                report.sum_read_length_correct += readlength
+                report.sum_bases_aligned_correct += basesaligned
+            if exonHit:
+                report.sum_read_length_hitone += readlength
+                report.sum_bases_aligned_hitone += basesaligned
 
     report.pot_new_annotations = new_annotations
     out_q.put([report, expressed_genes, gene_coverage])
@@ -1026,7 +1133,7 @@ def eval_mapping_annotations(ref_file, sam_file, annotations_file, paramdict):
 
     total_read_length = 0
     total_bases_aligned = 0
-    percentage_bases_aligned = 0.0
+    percent_bases_aligned = 0.0
 
     # Setting up some sort of a progress bar
     if per_base_stats:
@@ -1128,13 +1235,13 @@ def eval_mapping_annotations(ref_file, sam_file, annotations_file, paramdict):
     sys.stderr.write('\nDone!')
 
     if total_read_length == 0:
-        percentage_bases_aligned = -1
+        percent_bases_aligned = -1
     else:
-        percentage_bases_aligned = 100 * float(total_bases_aligned) / total_read_length
+        percent_bases_aligned = 100 * float(total_bases_aligned) / total_read_length
 
     report.sum_read_length = total_read_length
     report.sum_bases_aligned = total_bases_aligned
-    report.percentage_bases_aligned = percentage_bases_aligned
+    report.percent_bases_aligned = percent_bases_aligned
 
     # Separating Annotations and Mappings (SAM lines) according to chromosome and strand
     partlist = []       # A list of keys of parts for processing
@@ -1272,9 +1379,19 @@ def eval_mapping_annotations(ref_file, sam_file, annotations_file, paramdict):
         report.pot_new_annotations += t_report.pot_new_annotations
         report.alignments_with_pna = len(report.pot_new_annotations)
 
-        # Double counted!! (but since only relative values are taken into account, it's not relevant)
-        # report.num_good_alignment += t_report.num_good_alignment
-        # report.num_bad_alignment += t_report.num_bad_alignment
+        report.sum_read_length_correct += t_report.sum_read_length_correct
+        report.sum_bases_aligned_correct += t_report.sum_bases_aligned_correct
+        report.sum_read_length_hitone += t_report.sum_read_length_hitone
+        report.sum_bases_aligned_hitone += t_report.sum_bases_aligned_hitone
+
+    if report.sum_read_length_correct > 0:
+        report.percent_bases_aligned_correct = 100.0 * float(report.sum_bases_aligned_correct) / report.sum_read_length_correct
+    else :
+        report.percent_bases_aligned_correc = -1.0
+    if report.sum_read_length_hitone > 0:
+        report.percent_bases_aligned_hitone = 100.0 * float(report.sum_bases_aligned_hitone) / report.sum_read_length_hitone
+    else:
+        report.percent_bases_aligned_hitone = -1.0
 
     # Collecting new annotations (there should be a lot of duplicates)
     # New annotations details are written to a file: annotations.report
