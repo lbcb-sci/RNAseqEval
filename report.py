@@ -113,6 +113,8 @@ class EvalReport:
                                             # To be considered
         self.num_almost_good = 0            # The number of alignments that would be contiguous, but have at least one partial alignment
                                             # that missses all exons
+        self.num_extended_good = 0          # The number of alignments that are larger than the best match annotation (i.e. extend beyond 
+                                            # annotation start or end), but otherwise match exon ends
 
 
         self.num_multi_exon_alignments = 0      # alignments spanning multiple exons / this can be correct
@@ -335,6 +337,7 @@ class EvalReport:
             Alignments with low match count (lower than mismatch, insert and delete combined) = %d
             Alignments hitting an exon (start / end / both) = %d / %d / %d
             Alignments with a partial miss (not good / "almost "good) = %d / %d
+            "Extended good" alignments = %d
             Contiguous / non contiguous alignments: %d (%.2f%%) / %d (%.2f%%)
             Hit all for real reads: %d (%.2f%%)
             """ % (self.sum_bases_aligned, self.sum_read_length, self.percent_bases_aligned, \
@@ -349,6 +352,7 @@ class EvalReport:
                    self.num_lowmatchcnt, \
                    self.num_good_starts, self.num_good_ends, self.num_equal_exons, \
                    self.num_partial_exon_miss, self.num_almost_good, \
+                   self.num_extended_good, \
                    self.num_good_alignment, self.good_alignment_percent, self.num_bad_alignment, self.bad_alignment_percent, \
                    self.num_hit_all, self.hit_all_percent)
 
@@ -389,12 +393,11 @@ class EvalReport:
                     report += """\n
                     Found %d potential new annotations with %d alignments
                     """ % (len(self.pot_new_annotations), self.alignments_with_pna)
+                    report += """\nDetailed report on annotations can be found in an '_annotations.report' file.\n"""
                 else:
                     report += """\n
                     Found NO potential new annotations:
                     """
-
-                report += """\nDetailed report on annotations can be found in an '_annotations.report' file.\n"""
 
             return report + '\n'
         elif self.rtype == ReportType.ANNOTATION_REPORT:
