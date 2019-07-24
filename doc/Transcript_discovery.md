@@ -51,11 +51,18 @@ The second method for new transcript discovery creates new annotations by starti
 
 ## Results
 
-The algorithm was tested on datasets from the 
+The algorithm was tested on several datasets from our RNA benchmark paper [Evaluation of tools for long read RNAseq slice-aware alignment](https://doi.org/10.1093/bioinformatics/btx668) published by Oxford Journals Bioinformatics. We tested it on alignments obtained by two best tools from the paper (Minimap2 and GMAP). We also tested the algorithm on the new version of our Graphmap tool (https://github.com/isovic/graphmap - in the last stage of development), taliored for mapping 3rd generation RNA reads.
+
+All test datasets were obtained by RNA sequencing _Drosophila Melanogaster_.
+- Dataset 1 contains PacBio ROI (_Reads of Insert_) - 192,000 reads
+- Dataset 2 contains PacBio subreads                - 243,000 reads
+- Dataset 3 contains Oxford Nanopre MinION reads, using R9 flowcell - 40,000 reads
+
+The results are given in the table below. While a relatively small number of generated new transcripts is the same accross all three RNA mapping tools, it can be concluded that those transcripts are the most likely to be accurate.
 
 | Dataset | Graphmap | Minimap2 | GMap | Common |
 | --- | --- | --- | --- | --- |
-| 1 | 247 | 213 | 174 | 33 |
-| 2 | 217 | 192 | 178 | 18 |
-| 4	| 13| 13 | 10 | 2 |
+| dataset 1 | 247 | 213 | 174 | 33 |
+| dataset 2 | 217 | 192 | 178 | 18 |
+| dataset 3	| 13| 13 | 10 | 2 |
 
