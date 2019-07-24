@@ -1,7 +1,7 @@
 # RNAseqEval
 A collection of tools for evaluating RNA seq mapping. The tools were used to benchmark some RNA mapping tools on real and synthetic third generation sequencing datasets. Detailed description of synthetic dataset preparation can be found at [RNAseq_benchmark/Data_preparation.md](RNAseq_benchmark/Data_preparation.md). Description of the evaluation process for real and simulated datasets can be found at [RNAseq_benchmark/RNAseq_benchmark.md](RNAseq_benchmark/RNAseq_benchmark.md).
 
-Recently a new version of tools has been published, with multiple bugs fixed and several new options. The main new funcionality of the RNAseqEval tool is proposing new transcripts/annotation. Details on new transcript discovery algorithm can be found at [RNAseq_benchmark/Transcript_discovery.md](RNAseq_benchmark/Transcript_discovery.md).
+Recently a new version of tools has been published, with multiple bugs fixed and several new options. The main new funcionality of the RNAseqEval tool is proposing new transcripts/annotation. Details on new transcript discovery algorithm can be found at [doc/Transcript_discovery.md](doc/Transcript_discovery.md).
 
 ## Installation
 Since the RNAseqEval repository contains python scripts, it does not require an installation. Only requirement is to clone RNAseqEval repository together with the samscripts submodule:
