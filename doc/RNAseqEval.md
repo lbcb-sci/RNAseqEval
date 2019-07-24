@@ -97,7 +97,7 @@ Oposed to first two modes which calculate certain statistical information from i
 - the number of bases aligned for that read (header "bases aligned")
 
 ## Output for eval-mapping and eval-annotations modes
-Depending on the usage mode, RNAseqEval.py script will display various information about input files and the results of the analysis. If option --calc_new_annotations is set, the script will also try to determine possible new transcripts. More on transcript dicovery can be found at [/doc/Transcript_discovery.md](/doc/Transcript_discovery.md.).
+Depending on the usage mode, RNAseqEval.py script will display various information about input files and the results of the analysis. If option --calc_new_annotations is set, the script will also try to determine possible new transcripts. More on transcript dicovery can be found at [/doc/Transcript_discovery.md](/doc/Transcript_discovery.md).
 
 General information on FASTA reference and mapping SAM file:
 
