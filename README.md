@@ -73,4 +73,4 @@ Detailed description of options, output and required simulation data organizatio
 Folder example_dataset contains an example dataset, simulated by applying PBSIM o a transcriptome. Example dataset was generated usign reference and annotations for _Drosophilla Melanogaster_ chromosome 4. The folder contains everything necessary to test out our evaluation tools. More on example dataset can be fouund at [example_dataset/example.md](example_dataset/example.md).
 
 ## Acknowledgement  
-This work has been supported in part by Croatian Science Fundation under the project UIP-11-2013-7353. 
+This work has been supported in part by Croatian Science Fundation under projects UIP-11-2013-7353 and IP-01-2018-5886.
