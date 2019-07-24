@@ -27,6 +27,8 @@ _Contiguous alignment_ represent a read that is correctly aligned to the referec
 - Internal _hit_ (or overlapped) exons must exactly match the alignment. 
 - The alignment must match the end of the first exon in the _hit map_ and it must match the start of the last exon in the _hit map_.
 
+_Best_match_annotation_, or the annotation with which the alignment will be compared, is determined based on the number of nucleotide bases from allignment which fall inside and outside the annotation. First, all candidate annotations are determined, i.e. all annotation that overlap with the alignment. For each annotation, a score is calculated by adding the number of bases that fall within the annotation and subtracting the number of bases that fall outside the annotation. The annotation with the highest score is chosen as the _best_match_annotation_. Old scoring algorithm only took into account the number of bases falling inside an annotation and can be used by setting the parameter --old_bma_calc.
+
 The script works in multiple threads and will spawn one thread for each cromosome and strand, and will examine anotations and alignments that strand and chromosome, thus significantly speeding up the analysis. 
 
 __IMPORTANT:__ When making calculations, an error of 5 bases is premitted. Similarly, for an overlap to be valid it has to be at least 5 bases. This can be altered by setting appropriate parameters when running the script.
@@ -95,7 +97,7 @@ Oposed to first two modes which calculate certain statistical information from i
 - the number of bases aligned for that read (header "bases aligned")
 
 ## Output for eval-mapping and eval-annotations modes
-Depending on the usage mode, RNAseqEval.py script will display various information about input files and the results of the analysis.
+Depending on the usage mode, RNAseqEval.py script will display various information about input files and the results of the analysis. If option --calc_new_annotations is set, the script will also try to determine possible new transcripts. More on transcript dicovery can be found at [doc/Transcript_discovery.md](doc/Transcript_discovery.md.).
 
 General information on FASTA reference and mapping SAM file:
 
@@ -127,6 +129,8 @@ Mapping quality information obtained by comparing alignements in a SAM file to g
      - Number of alignments with "hit" on transcripts
      - Number of alignments with "hit" on exons
      - Number of alignments matching a beginning and an end of an exon
+     - Number of alignments where more than 50% of bases fall within an annotation
+     - Number of alignments with low match count
      - Number of contiguous and non contiguous alignments - as described earlier in the text
 
 If so specified by the option -ex (--expression), the script also calculates gene expression and gene/exon coverage information. This option is available only in eval-mapping mode if annotations are provided. The script will output the number of expressed transcripts. A transcript is considered expressed if at least one read is mapped to its position. For each transcript, the script also prints out the following:
