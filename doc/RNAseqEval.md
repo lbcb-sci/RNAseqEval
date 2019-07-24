@@ -29,7 +29,7 @@ _Contiguous alignment_ represent a read that is correctly aligned to the referec
 
 The script works in multiple threads and will spawn one thread for each cromosome and strand, and will examine anotations and alignments that strand and chromosome, thus significantly speeding up the analysis. 
 
-__IMPORTANT:__ When making calculations, an error of 5 bases is premitted. Similarly, for an overlap to be valid it has to be at least 5 bases. This can be altered by changing the value of the DEFAULT_ALLOWED_INACCURACY constant in the Annotation_formats.py. In the next version of the RNAseqEval tool, this will be one of the adjustable parameters.
+__IMPORTANT:__ When making calculations, an error of 5 bases is premitted. Similarly, for an overlap to be valid it has to be at least 5 bases. This can be altered by setting appropriate parameters when running the script.
 
 ## Usage modes
 RNAseqEval.py script can be used in three differents modes, determined by the first argument. Each mode requires different parameters and allowes different options.
@@ -58,8 +58,6 @@ Allowed options:
                                  where the alignment is still considered correct (default 5)
      -mo (--min_overlap) : A minimum overlap between an annotation and an alignment that is considered valid
                            (default 5)
-     --graphmap : correct for a bug in GraphMap RNA mapping on reverse strand
-                   taken into account only when calculating the percentage of matches
      --old_bma_calc : Calculate best matching annotation only based on maximizing the number of bases an alignment
                       on an annotation. The number of bases outside an annotation is not take into account in this case
      --leave_chrom_names : do not preprocess chromosome names in SAM, reference and annotation files
