@@ -24,7 +24,6 @@ An exampe of a detailed annotation report is given below.
     Number of reads: 7
     Type:FUSED ANNOTATION
     Reads:
-
     m160615_181138_42182_c101000182550000001823232709161603_s1_p0/135263/ccs
     m160615_181138_42182_c101000182550000001823232709161603_s1_p0/138904/ccs
     m160713_175918_42182_c101000162550000001823232709161621_s1_p0/136269/ccs
@@ -52,4 +51,11 @@ The second method for new transcript discovery creates new annotations by starti
 
 ## Results
 
+The algorithm was tested on datasets from the 
+
+| Dataset | Graphmap | Minimap2 | GMap | Common |
+| --- | --- | --- | --- | --- |
+| 1 | 247 | 213 | 174 | 33 |
+| 2 | 217 | 192 | 178 | 18 |
+| 4	| 13| 13 | 10 | 2 |
 
