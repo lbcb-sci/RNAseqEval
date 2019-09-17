@@ -27,7 +27,7 @@ DISTANCE_THRESHOLD = 10000
 MIN_OVERLAP_BASES = 5
 NUM_PROCESS = 12
 NEW_ANNOTATION_MIN = 3      # A Minimum number of reads for new annotation to be proposed
-MIN_INTRON_SIZE = 5         # Used for detecting new annotations
+MIN_INTRON_SIZE = 10         # Used for detecting new annotations
 
 
 # TODO: Osim broja readova koji pokrivaju pojedini gen, izracunati i coverage
@@ -978,6 +978,8 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
         # Checking for possible new annotations
         # 1. Fusing exons separated by small introns
         if calcNewAnnotations and best_match_annotation is not None and not isGood:
+            # import pdb
+            # pdb.set_trace()
             # Create a new annotation from the best match annotation, that removes short introns.
             new_annotation = proposeNewFusedAnnotation(samline_list, best_match_annotation, allowed_inacc, min_overlap)
             if new_annotation is not None:
@@ -1376,7 +1378,9 @@ def eval_mapping_annotations(ref_file, sam_file, annotations_file, paramdict):
                 chromname = getChromName(annotation.seqname, processChromNames)
                 partname = chromname
                 try:
-                    part_annotations[partname].append(annotation)
+                    # simply skipping annotations that are not on the reference
+                    if partname in part_annotations:
+                        part_annotations[partname].append(annotation)
                 except Exception:
                     import pdb
                     pdb.set_trace()

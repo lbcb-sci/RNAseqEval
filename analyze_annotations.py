@@ -6,15 +6,99 @@
 # All headers will be changed to chr[ID]
 
 import sys, os
-import random
 
 # To enable importing from samscripts submodule
 SCRIPT_PATH = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(SCRIPT_PATH, 'samscripts/src'))
-import utility_sam
+# import utility_sam
 import Annotation_formats
 
 from fastqparser import read_fastq
+
+NEW_ANNOTATION_MIN = 3      # A Minimum number of reads for new annotation to be proposed
+
+
+def loadNewAnnotations(newAnnotationsFile):
+    new_annotations = []
+    with open(newAnnotationsFile, 'rU') as newann_file:
+        while (True):
+            line = newann_file.readline()
+            if line == '':      # End of file reached (empty lines will have \n)
+                break
+
+            if line.startswith('Name:'):
+                # Loading a new annotations
+                # import pdb
+                # pdb.set_trace()
+                new_annotation = Annotation_formats.GeneDescription()
+                new_annotation.seqname = line[6:-1]
+                line = newann_file.readline()
+                new_annotation.source = line[9:-1]
+                line = newann_file.readline()
+                new_annotation.strand = line[8:-1]
+                line = newann_file.readline()
+                noreads = int(line[16:-1])
+                new_annotation.items = []
+
+                # Reading annotation items
+                while (True):
+                    line = newann_file.readline()
+                    if line == '':
+                        sys.stderr.write('Error reading new annotations file %s!' % newAnnotationsFile);
+                        import pdb
+                        pdb.set_trace()
+                        exit()
+                    if line.startswith('Items:'):
+                        # Extracting annotation items
+                        line = line[7:-1]       # Removing starting text and \n at the end
+                        line = line[1:-1]       # Removing starting and ending bracket for easier splitting
+                        elements = line.split('] [')     # Splitting into separate items
+                        for element in elements:
+                            pos = element.find(',')
+                            start = int(element[:pos])
+                            end = int(element[pos+2:])
+                            new_item = Annotation_formats.GeneItem()
+                            new_item.start = start
+                            new_item.end = end
+                            new_annotation.items.append(new_item)
+                        break
+
+                if noreads >= NEW_ANNOTATION_MIN:
+                    new_annotations.append(new_annotation)
+
+    return new_annotations
+
+
+def compare(filelist):
+    annotation_dict = {}
+    for filename in filelist:
+        tmp_annotations = loadNewAnnotations(filename)
+        annotation_dict[filename] = tmp_annotations
+    
+    sys.stdout.write('\nCOMPARING ANNOTATIONS:')
+    for filename, annlist in annotation_dict.items():
+        sys.stdout.write('\nFile %s contains %d annotations supported by at least %d reads!' % (filename, len(annlist), NEW_ANNOTATION_MIN))
+
+    num_commonannotations = 0
+    filename1 = filelist[0]
+    annotations1 = annotation_dict[filename1]
+    for annotation1 in annotations1:
+        commonannotation = True
+        for otherfile in filelist[1:]:
+            otherannotations = annotation_dict[otherfile]
+            foundinfile = False
+            for oannotation in otherannotations:
+                if annotation1.itemsEqual(oannotation):
+                    foundinfile = True
+                    break
+            if not foundinfile:
+                commonannotation = False
+                break
+
+        if commonannotation:
+            num_commonannotations += 1
+
+    sys.stdout.write('\n\nFound %d common annotations!\n' % num_commonannotations)
 
 
 def analyze(annotations_file):
@@ -112,10 +196,11 @@ def verbose_usage_and_exit():
     sys.stderr.write('This script is used to analyze gene annotations.\n')
     sys.stderr.write('\n')
     sys.stderr.write('Usage:\n')
-    sys.stderr.write('\t%s [mode] [filename]\n' % sys.argv[0])
+    sys.stderr.write('\t%s [mode]\n' % sys.argv[0])
     sys.stderr.write('\n')
     sys.stderr.write('\tmode:\n')
-    sys.stderr.write('\t\tanalyze - analyze annotations\n')
+    sys.stderr.write('\t\tanalyze [filename] - analyze a single annotation file in GFF or BED format\n')
+    sys.stderr.write('\t\tcompare [filename] ... - compare multiple files with new annotations (proprietary format)\n')
     exit(0)
 
 if __name__ == '__main__':
@@ -127,6 +212,10 @@ if __name__ == '__main__':
     if (mode == 'analyze'):
         annotations_file = sys.argv[2]
         analyze(annotations_file)
+
+    elif mode == 'compare':
+        filelist = sys.argv[2:]
+        compare(filelist)
 
     else:
         print 'Invalid mode: %s!' % mode
