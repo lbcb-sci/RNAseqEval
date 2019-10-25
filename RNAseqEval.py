@@ -1221,6 +1221,17 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
                 if isNAGood:
                     report.num_correct_new_annotations += 1
 
+        new_annotation = None
+        # Do this part regardless if a combined annotation was already found
+        if (calcNewAnnotations & NA_DROP_EXONS != 0) and best_match_annotation is not None and new_annotation is None and not isGood:
+            (new_annotation, isNAGood) = proposeNewDropExonAnnotation(samline_list, best_match_annotation \
+                                                        , bma_score, allowed_inacc, min_overlap, old_bma_calc)
+            if new_annotation is not None:
+                new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
+                new_annotations.append(new_annotation)
+                if isNAGood:
+                    report.num_correct_new_annotations += 1
+
         report.num_halfbases_hit = num_hithalfbases
 
         if num_misses > 0:
