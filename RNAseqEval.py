@@ -32,6 +32,15 @@ MIN_INTRON_SIZE = 10         # Used for detecting new annotations
 
 # TODO: Osim broja readova koji pokrivaju pojedini gen, izracunati i coverage
 
+annotations2check = ['NM_001170371', 'NM_079876', 'NM_166709', 'NM_001015387', 'NM_001316660', 'NM_001258510'] + ['NM_137066']
+
+# New annotation calculation level
+NA_NO_NEW_ANNOTATINS = 0
+NA_SKIP_INTRONS = 1
+NA_COMBINED_ANNOTATIONS_1 = 2
+NA_COMBINED_ANNOTATIONS_2 = 4
+NA_DROP_EXONS = 8
+
 # Parameter definitions for paramparser
 paramdefs = {'-a' : 1,
              '--version' : 0,
@@ -54,15 +63,16 @@ paramdefs = {'-a' : 1,
              '--graphmap' : 0,
              '--old_bma_calc' : 0,
              '--leave_chrom_names': 0,
-             '--calc_new_annotations' : 0,
-             '--no_multiprocessing' : 0}
+             '--calc_new_annotations' : 1,
+             '--no_multiprocessing' : 0,
+             '--check_reads' : 0}
 
 
 def cleanup():
     pass
 
 
-# A function that looks at exon maps and checks if an alignment is good and spliced
+# A function that looks at already calculated exon maps and checks if an alignment is good (correct) and spliced
 def isGoodSplitAlignment(exonhitmap, exoncompletemap, exonstartmap, exonendmap):
 
     isGood = True
@@ -107,6 +117,39 @@ def isGoodSplitAlignment(exonhitmap, exoncompletemap, exonstartmap, exonendmap):
         isGood = False
 
     return isGood, isSpliced
+
+
+# A function that calculates exon maps for a given alignment and annotation 
+def calcExonMaps(samline_list, annotation, allowed_inacc, min_overlap):
+    # Initializing the maps
+    t_exonhitmap = {(i+1):0 for i in xrange(len(annotation.items))}
+    t_exoncompletemap = {(i+1):0 for i in xrange(len(annotation.items))}
+    t_exonstartmap = {(i+1):0 for i in xrange(len(annotation.items))}
+    t_exonendmap = {(i+1):0 for i in xrange(len(annotation.items))}
+
+    # Calculating hit maps
+    for samline in samline_list:
+        item_idx = 0
+        lstartpos = samline.pos
+        reflength = samline.CalcReferenceLengthFromCigar()
+        lendpos = lstartpos + reflength
+        exonhit = False
+        for item in annotation.items:
+            item_idx += 1
+            if item.overlapsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
+                exonhit = True
+                t_exonhitmap[item_idx] += 1
+                if item.equalsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
+                    t_exoncompletemap[item_idx] = 1
+                    t_exonstartmap[item_idx] = 1
+                    t_exonendmap[item_idx] = 1
+                elif item.startsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
+                    t_exonstartmap[item_idx] = 1
+                elif item.endsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
+                    t_exonendmap[item_idx] = 1
+
+    return (t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap)
+
 
 
 # A helper function that extracts a chromosome name from a fasta header (or other similar strings)
@@ -450,7 +493,7 @@ def load_and_process_annotations(annotations_file, paramdict, report):
 # If the best_match_annotation does not produce a "correct" alignment check if it contains overly small
 # introns. If by joining exons seperated by the samll exon we can achieve correct alignment, propose
 # the new annotation!
-def proposeNewFusedAnnotation(samline_list, best_match_annotation, allowed_inacc, min_overlap):
+def proposeNewFusedAnnotation(samline_list, best_match_annotation, bma_score, allowed_inacc, min_overlap, old_bma_calc = False):
     # Create a new annotation from the best match annotation, that removes short introns.
     new_annotation = Annotation_formats.GeneDescription()
     new_annotation.seqname = samline_list[0].qname
@@ -460,6 +503,7 @@ def proposeNewFusedAnnotation(samline_list, best_match_annotation, allowed_inacc
     new_annotation.transcriptname = "SMALL INTRON DISCARDING"       # New annotation type
     new_annotation.items = []
     fused = False
+    isNAGood = False
 
     # Fusing exons separated by very short introns
     items = sorted(best_match_annotation.items, key = lambda it: it.start)
@@ -475,43 +519,19 @@ def proposeNewFusedAnnotation(samline_list, best_match_annotation, allowed_inacc
     new_annotation.items.append(current_aitem)
 
     if fused:
-        t_exonhitmap = {(i+1):0 for i in xrange(len(new_annotation.items))}
-        t_exoncompletemap = {(i+1):0 for i in xrange(len(new_annotation.items))}
-        t_exonstartmap = {(i+1):0 for i in xrange(len(new_annotation.items))}
-        t_exonendmap = {(i+1):0 for i in xrange(len(new_annotation.items))}
+        (t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap) = calcExonMaps(samline_list, new_annotation, allowed_inacc, min_overlap)
 
-        # Calculating hit maps for new fused annotation
-        for samline in samline_list:
-            item_idx = 0
-            lstartpos = samline.pos
-            reflength = samline.CalcReferenceLengthFromCigar()
-            lendpos = lstartpos + reflength
-            exonhit = False
-            for item in new_annotation.items:
-                item_idx += 1
-                if item.overlapsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
-                    exonhit = True
-                    t_exonhitmap[item_idx] += 1
-                    if item.equalsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
-                        t_exoncompletemap[item_idx] = 1
-                        t_exonstartmap[item_idx] = 1
-                        t_exonendmap[item_idx] = 1
-                    elif item.startsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
-                        t_exonstartmap[item_idx] = 1
-                    elif item.endsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
-                        t_exonendmap[item_idx] = 1
+        isNAGood, isSpliced2 = isGoodSplitAlignment(t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap)
+        new_score = calc_annotation_match_score(samline_list, new_annotation, old_bma_calc)
+        if new_score > bma_score:
+            return (new_annotation, isNAGood)
 
-        isGood2, isSpliced2 = isGoodSplitAlignment(t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap)
-        if isGood2:
-            return new_annotation
-
-    return None
+    return (None, isNAGood)
 
 
-
-# If the best_match_annotation does not produce a "correct" alignment check if better annotaiton
-# can be obtained by combinind the best match annotation with any of the other candidate annotations
-def proposeNewCombinedAnnotation(samline_list, best_match_annotation, candidate_annotations, allowed_inacc, min_overlap):
+# If the best_match_annotation does not produce a "correct" alignment check if better annotation
+# can be obtained by combining the best match annotation with any of the other candidate annotations
+def proposeNewCombinedAnnotation(samline_list, best_match_annotation, candidate_annotations, bma_score, allowed_inacc, min_overlap, old_bma_calc = False):
     # Initializa new annotation
     new_annotation = Annotation_formats.GeneDescription()
     new_annotation.seqname = samline_list[0].qname
@@ -521,6 +541,7 @@ def proposeNewCombinedAnnotation(samline_list, best_match_annotation, candidate_
     new_annotation.transcriptname = "FUSED ANNOTATION"          # New annotation type
     new_annotation.items = []
     proposeNew = False      # Determines whether we want to propose a new annotation
+    isNAGood = False
 
     # Sort samlines according to position
     sll2 = sorted(samline_list, key = lambda sl: sl.pos)
@@ -531,20 +552,17 @@ def proposeNewCombinedAnnotation(samline_list, best_match_annotation, candidate_
 
     numAlignments = len(sll2)       # Number of exons in an alignment
     start = True
-    end = False    
+    end = False
 
     # Adding best match annotation exons that are before the alignment, to the new alignment
     for aitem in best_match_annotation.items:
         if aitem.end < startpos:
             new_annotation.items.append(copy.copy(aitem))
    
-    # Check the first partial alignment and compare it to best annotation exons
-    samline = sll2[0]
-
     counter = 1     # Counting the partial alignments to allow different procession
                     # of the first and the last partial alignment
     # Check each inside partial alignment and compare it to exons in best annotation
-    for samline in sll2[1:-1]:    # Find an alignment that overlaps the exon
+    for samline in sll2:    # Find an alignment that overlaps the exon
         lstartpos = samline.pos
         reflength = samline.CalcReferenceLengthFromCigar()
         lendpos = lstartpos + reflength
@@ -597,10 +615,218 @@ def proposeNewCombinedAnnotation(samline_list, best_match_annotation, candidate_
 
     # If better exon matches have been found, propose a new annotation
     if proposeNew:
-        return new_annotation
+        (t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap) = calcExonMaps(samline_list, new_annotation, allowed_inacc, min_overlap)
 
-    return None
+        isNAGood, isSpliced2 = isGoodSplitAlignment(t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap)
+        new_score = calc_annotation_match_score(samline_list, new_annotation, old_bma_calc)
+        if new_score > bma_score:
+            return (new_annotation, isNAGood)
 
+    return (None, isNAGood)
+
+
+# If the best_match_annotation does not produce a "correct" alignment check if better annotation
+# can be obtained by combining the best match annotation with any of the other candidate annotations
+# Second version of the function, does not look only of perfect match new exons, but also for those that
+# ovelap more with the alignment
+def proposeNewCombinedAnnotation2(samline_list, best_match_annotation, candidate_annotations, bma_score, allowed_inacc, min_overlap, old_bma_calc = False):
+    # Initializa new annotation
+    new_annotation = Annotation_formats.GeneDescription()
+    new_annotation.seqname = samline_list[0].qname
+    # new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
+    new_annotation.source = best_match_annotation.genename
+    new_annotation.strand = best_match_annotation.strand
+    new_annotation.transcriptname = "FUSED ANNOTATION"          # New annotation type
+    new_annotation.items = []
+    proposeNew = False      # Determines whether we want to propose a new annotation
+    isNAGood = False
+
+    # Sort samlines according to position
+    sll2 = sorted(samline_list, key = lambda sl: sl.pos)
+
+    # Calculating alignment start and end
+    startpos = sll2[0].pos
+    endpos = sll2[-1].pos + sll2[-1].CalcReferenceLengthFromCigar()
+
+    numAlignments = len(sll2)       # Number of exons in an alignment
+    start = True
+    end = False    
+
+    # Adding best match annotation exons that are before the alignment, to the new alignment
+    for aitem in best_match_annotation.items:
+        if aitem.end < startpos:
+            new_annotation.items.append(copy.copy(aitem))
+
+    counter = 1     # Counting the partial alignments to allow different procession
+                    # of the first and the last partial alignment
+    # Check each inside partial alignment and compare it to exons in best annotation
+    for samline in sll2:    # Find an alignment that overlaps the exon
+        lstartpos = samline.pos
+        reflength = samline.CalcReferenceLengthFromCigar()
+        lendpos = lstartpos + reflength
+        overlap = -1
+        good = False
+        replacementFound = False
+        ovlitem = None
+        bma_item = None
+        for aitem in best_match_annotation.items:
+            if aitem.overlapsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
+                bma_item = aitem
+                # Check if partial alignment perfectly matches the annotation exon
+                # The first partial alignment can begin within the exon
+                # The last partial aligment can end within the exon
+                # Middle partial alignments must be equal to the exon
+                if aitem.equalsItem(lstartpos, lendpos, allowed_inacc, min_overlap) or \
+                   (counter == 1 and aitem.endsItem(lstartpos, lendpos, allowed_inacc, min_overlap) \
+                        and lstartpos + allowed_inacc >= aitem.start) or \
+                   (counter == numAlignments and aitem.startsItem(lstartpos, lendpos, allowed_inacc, min_overlap) \
+                        and lendpos - allowed_inacc <= aitem.end):
+                    good = True
+
+                # Calculate the overlap between exon and alignment
+                overlap = aitem.basesInside(lstartpos, lendpos)
+                break
+
+        # If partial aligment doesn't perfectly match the exon
+        # Try to find a better match among other candidate annotations
+        newItem = None
+        if not good:
+            for cannotation in candidate_annotations:
+                for aitem in cannotation.items:
+                    # Looking for an exon with larger overlap with alignment, which can fit into a current
+                    # best match annotation (there is no overlap with other exons in BMA)
+                    if aitem.overlapsItem(lstartpos, lendpos, allowed_inacc, min_overlap):
+                        newoverlap = aitem.basesInside(lstartpos, lendpos)
+                        if newoverlap > overlap:
+                            canFit = True
+                            for aitem2 in best_match_annotation.items:
+                                if (bma_item is not None) and not aitem2.equalsItem(bma_item.start, bma_item.end) and \
+                                       aitem2.overlapsItem(aitem.start, aitem.end):
+                                    canFit = False
+                                    break
+                                if bma_item is None and aitem2.overlapsItem(aitem.start, aitem.end):
+                                    canFit = False
+                                    break
+
+                            if canFit:
+                                replacementFound = True
+                                overlap = newoverlap
+                                newItem = aitem
+
+        # If the replacement exon is found, place it in the new annotation, otherwise place old exon (if it exists)
+        if replacementFound:
+            new_annotation.items.append(copy.copy(newItem))
+            proposeNew = True
+        elif bma_item is not None:
+            new_annotation.items.append(copy.copy(bma_item))
+
+        counter += 1
+
+    # Adding best match annotation exons that are after the alignment,to the new alignment
+    for aitem in best_match_annotation.items:
+        if aitem.start > endpos:
+            new_annotation.items.append(copy.copy(aitem))
+
+    # If better exon matches have been found, propose a new annotation
+    if proposeNew:
+        (t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap) = calcExonMaps(samline_list, new_annotation, allowed_inacc, min_overlap)
+
+        isNAGood, isSpliced2 = isGoodSplitAlignment(t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap)
+        new_score = calc_annotation_match_score(samline_list, new_annotation, old_bma_calc)
+        if new_score > bma_score:
+            return (new_annotation, isNAGood)
+
+    return (None, isNAGood)
+
+
+
+# If the best_match_annotation does not produce a "correct" alignment check if better annotation
+# can be obtained by dropping an exon (or mseveral exons) from the best match annotation
+def proposeNewDropExonAnnotation(samline_list, best_match_annotation, bma_score, allowed_inacc, min_overlap, old_bma_calc = False):
+    # Initializa new annotation
+    new_annotation = Annotation_formats.GeneDescription()
+    new_annotation.seqname = samline_list[0].qname
+    # new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
+    new_annotation.source = best_match_annotation.genename
+    new_annotation.strand = best_match_annotation.strand
+    new_annotation.transcriptname = "DROP EXON ANNOTATION"          # New annotation type
+    new_annotation.items = []
+    proposeNew = False      # Determines whether we want to propose a new annotation
+    isNAGood = False
+
+    # Sort samlines according to position
+    sll2 = sorted(samline_list, key = lambda sl: sl.pos)
+
+    # Calculating alignment start and end
+    startpos = sll2[0].pos
+    endpos = sll2[-1].pos + sll2[-1].CalcReferenceLengthFromCigar()
+
+    numAlignments = len(sll2)       # Number of exons in an alignment
+    start = True
+    end = False
+
+    # Adding best match annotation exons that are before the alignment, to the new alignment
+    for aitem in best_match_annotation.items:
+        if aitem.end < startpos:
+            new_annotation.items.append(copy.copy(aitem))
+
+    # Checking if any annotation exons that fall within the global alignment limits
+    # Do not overlap with any of the partial alignments
+    # Such exons are droppped, and a new alignment is proposed
+    for bma_item in best_match_annotation.items:
+        dropItem = True
+        if bma_item.end >= startpos and bma_item.start <= endpos:       # If an annotation item overlaps with the aligment
+            for samline in sll2:
+                lstartpos = samline.pos
+                reflength = samline.CalcReferenceLengthFromCigar()
+                lendpos = lstartpos + reflength
+                if bma_item.overlaps(lstartpos,lendpos, allowed_inacc, min_overlap):
+                    dropItem = False
+
+            if dropItem:
+                proposeNew = True
+            else:
+                new_annotation.items.append(copy.copy(bma_item))
+
+    # Adding best match annotation exons that are after the alignment,to the new alignment
+    for aitem in best_match_annotation.items:
+        if aitem.start > endpos:
+            new_annotation.items.append(copy.copy(aitem))
+
+    # If better exon matches have been found, propose a new annotation
+    if proposeNew:
+        (t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap) = calcExonMaps(samline_list, new_annotation, allowed_inacc, min_overlap)
+
+        isNAGood, isSpliced2 = isGoodSplitAlignment(t_exonhitmap, t_exoncompletemap, t_exonstartmap, t_exonendmap)
+        new_score = calc_annotation_match_score(samline_list, new_annotation, old_bma_calc)
+        if new_score > bma_score:
+            return (new_annotation, isNAGood)
+
+    return (None, isNAGood)
+
+
+
+# Calculates a score that determines how well an alignment matches an annotation
+# Old score calculation return the number of bases on which alignment and annotation match
+# New score calculation also subtracts the number of bases from alignment that fall outside the annotation
+# Default is NEW score calculation!
+def calc_annotation_match_score(samline_list, cannotation, old_bma_calc = False):
+    score = 0
+
+    for samline in samline_list:
+        start = samline.pos
+        reflength = samline.CalcReferenceLengthFromCigar()
+        end = start + reflength
+        slBasesInside = 0
+        for item in cannotation.items:
+            bases = item.basesInside(start, end)
+            score += bases
+            slBasesInside += bases
+            if not old_bma_calc:
+                # KK: Punishing bases outside the gene item
+                score -= reflength - slBasesInside
+
+    return score
 
 
 # A wrapper around function eval_mapping_part, for multiprocessing
@@ -625,13 +851,15 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
     allowed_inacc = Annotation_formats.DEFAULT_ALLOWED_INACCURACY       # Allowing some shift in positions
     min_overlap = Annotation_formats.DEFAULT_MINIMUM_OVERLAP            # Minimum overlap that is considered
 
+    reads2check = []
+
     processChromNames = True
     if '--leave_chrom_names' in paramdict:
         processChromNames = False
 
-    calcNewAnnotations = False
+    calcNewAnnotations = 0
     if '--calc_new_annotations' in paramdict:
-        calcNewAnnotations = True
+        calcNewAnnotations = int(paramdict['--calc_new_annotations'][0])
 
     # Setting allowed_inaccuracy from parameters
     if '--allowed_inacc' in paramdict:
@@ -669,6 +897,10 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
     per_base_stats = True
     if '--no_per_base_stats' in paramdict:
         per_base_stats = False
+
+    checkReads = False
+    if '--check_reads' in paramdict:
+        checkReads = True
 
     num_hithalfbases = 0
 
@@ -779,60 +1011,35 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
 
         if len(candidate_annotations) > 1:
             # Find the best matching candidate            
-            if not old_bma_calc:
-                max_score = 0
-                for cannotation in candidate_annotations:
-                    if cannotation.genename not in genescovered:
-                        genescovered.append(cannotation.genename)
-                        gene_cnt += 1
+            max_score = 0
+            for cannotation in candidate_annotations:
+                if cannotation.genename not in genescovered:
+                    genescovered.append(cannotation.genename)
+                    gene_cnt += 1
 
-                    score = 0
-                    for samline in samline_list:
-                        start = samline.pos
-                        reflength = samline.CalcReferenceLengthFromCigar()
-                        end = start + reflength
-                        slBasesInside = 0
-                        for item in cannotation.items:
-                            bases = item.basesInside(start, end)
-                            score += bases
-                            slBasesInside += bases
-                        # KK: Punishing bases outside the gene item
-                        score -= reflength - slBasesInside
+                score = calc_annotation_match_score(samline_list, cannotation, old_bma_calc)
 
-                    if score > max_score:
-                        max_score = score
-                        best_match_annotation = cannotation
-
-            # Calculating the best matching candidate annotation the old way, not punishing the bases aligned outside the annotation
-            else:
-                max_score = 0
-                for cannotation in candidate_annotations:
-                    if cannotation.genename not in genescovered:
-                        genescovered.append(cannotation.genename)
-                        gene_cnt += 1
-
-                    score = 0
-                    for samline in samline_list:
-                        start = samline.pos
-                        reflength = samline.CalcReferenceLengthFromCigar()
-                        end = start + reflength
-                        for item in cannotation.items:
-                            bases = item.basesInside(start, end)
-                            score += bases
-
-                    if score > max_score:
-                        max_score = score
-                        best_match_annotation = cannotation
+                if score > max_score:
+                    max_score = score
+                    best_match_annotation = cannotation
 
         elif len(candidate_annotations) == 1:
             best_match_annotation = candidate_annotations[0]
 
-        exonhitmap = {}
-        exoncompletemap = {}
-        exonstartmap = {}
-        exonendmap = {}
+        bma_score = max_score       # New variable for best match annotation score, with a more suitable name
 
         if best_match_annotation is not None:
+            # KK: Checing some suspicious annotations!!
+            # import pdb
+            #pdb.set_trace()
+            # if best_match_annotation.genename in annotations2check:
+            #     import pdb
+            #     pdb.set_trace()
+            if checkReads and best_match_annotation.genename in annotations2check:
+                reads2check.append(samline_list[0].qname)
+                # import pdb
+                # pdb.set_trace()
+
             annotation = best_match_annotation      # So that I dont have to refactor the code
 
             hit = True
@@ -974,17 +1181,21 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
                 report.num_possible_spliced_alignment += 1
 
         new_annotation = None
+        isNAGood = False
 
         # Checking for possible new annotations
         # 1. Fusing exons separated by small introns
-        if calcNewAnnotations and best_match_annotation is not None and not isGood:
+        if (calcNewAnnotations & NA_SKIP_INTRONS != 0) and best_match_annotation is not None and not isGood:
             # import pdb
             # pdb.set_trace()
             # Create a new annotation from the best match annotation, that removes short introns.
-            new_annotation = proposeNewFusedAnnotation(samline_list, best_match_annotation, allowed_inacc, min_overlap)
+            (new_annotation, isNAGood) = proposeNewFusedAnnotation(samline_list, best_match_annotation, bma_score, allowed_inacc \
+                                                     , min_overlap, old_bma_calc)
             if new_annotation is not None:
                 new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
                 new_annotations.append(new_annotation)
+                if isNAGood:
+                    report.num_correct_new_annotations += 1
 
         # 2. If the best_match_annotation does not produce a "correct" alignment, maybe it can be improved by combinig it 
         # with other annotation from the candidate annotations set
@@ -993,11 +1204,22 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
         # For each exon that is not correctly aligned to the best match annotation, check another annotations to see if 
         # it can be correctly aligned to any of them
         # checking maps with values 0 or 1 for each exon: exonhitmap, exoncompletemap, exonstartmap, exonendmap
-        if calcNewAnnotations and best_match_annotation is not None and new_annotation is None and not isGood:
-            new_annotation = proposeNewCombinedAnnotation(samline_list, best_match_annotation, candidate_annotations, allowed_inacc, min_overlap)
+        if (calcNewAnnotations & NA_COMBINED_ANNOTATIONS_1 != 0) and best_match_annotation is not None and new_annotation is None and not isGood:
+            (new_annotation, isNAGood) = proposeNewCombinedAnnotation(samline_list, best_match_annotation, candidate_annotations \
+                                                        , bma_score, allowed_inacc, min_overlap, old_bma_calc)
             if new_annotation is not None:
                 new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
                 new_annotations.append(new_annotation)
+                if isNAGood:
+                    report.num_correct_new_annotations += 1
+        elif (calcNewAnnotations & NA_COMBINED_ANNOTATIONS_2 != 0) and best_match_annotation is not None and new_annotation is None and not isGood:
+            (new_annotation, isNAGood) = proposeNewCombinedAnnotation2(samline_list, best_match_annotation, candidate_annotations \
+                                                        , bma_score, allowed_inacc, min_overlap, old_bma_calc)
+            if new_annotation is not None:
+                new_annotation.genename = "New annotation %d " % (len(new_annotations)+1)
+                new_annotations.append(new_annotation)
+                if isNAGood:
+                    report.num_correct_new_annotations += 1
 
         report.num_halfbases_hit = num_hithalfbases
 
@@ -1074,6 +1296,9 @@ def eval_mapping_part(samlines, annotations, paramdict, chromname2seq):
                 report.sum_bases_aligned_hitone += basesaligned
 
     report.pot_new_annotations = new_annotations
+
+    if len(reads2check) > 0:
+        report.reads2check = reads2check
     
     return (report, expressed_genes, gene_coverage)
 
@@ -1247,9 +1472,9 @@ def eval_mapping_annotations(ref_file, sam_file, annotations_file, paramdict):
     if '--leave_chrom_names' in paramdict:
         processChromNames = False
 
-    calcNewAnnotations = False
+    calcNewAnnotations = 0
     if '--calc_new_annotations' in paramdict:
-        calcNewAnnotations = True
+        calcNewAnnotations = paramdict['--calc_new_annotations'][0]
 
     report = EvalReport(ReportType.MAPPING_REPORT)
     if '-ex' in paramdict or '--expression' in paramdict:
@@ -1447,11 +1672,14 @@ def eval_mapping_annotations(ref_file, sam_file, annotations_file, paramdict):
             report.unmapped_names += t_report.unmapped_names
             report.pot_new_annotations += t_report.pot_new_annotations
             report.alignments_with_pna = len(report.pot_new_annotations)
+            report.num_correct_new_annotations += t_report.num_correct_new_annotations
 
             report.sum_read_length_correct += t_report.sum_read_length_correct
             report.sum_bases_aligned_correct += t_report.sum_bases_aligned_correct
             report.sum_read_length_hitone += t_report.sum_read_length_hitone
             report.sum_bases_aligned_hitone += t_report.sum_bases_aligned_hitone
+
+            report.reads2check += t_report.reads2check
 
         # Wait for all processes to end
         for proc in jobs:
@@ -1496,7 +1724,17 @@ def eval_mapping_annotations(ref_file, sam_file, annotations_file, paramdict):
         report.unmapped_names += t_report.unmapped_names
         report.pot_new_annotations += t_report.pot_new_annotations
         report.alignments_with_pna = len(report.pot_new_annotations)
+        report.num_correct_new_annotations += t_report.num_correct_new_annotations
 
+        report.sum_read_length_correct += t_report.sum_read_length_correct
+        report.sum_bases_aligned_correct += t_report.sum_bases_aligned_correct
+        report.sum_read_length_hitone += t_report.sum_read_length_hitone
+        report.sum_bases_aligned_hitone += t_report.sum_bases_aligned_hitone
+
+        report.reads2check += t_report.reads2check
+
+    # Annotations to check are stored globally
+    report.annotations2check = annotations2check
 
     if report.sum_read_length_correct > 0:
         report.percent_bases_aligned_correct = 100.0 * float(report.sum_bases_aligned_correct) / report.sum_read_length_correct
@@ -1627,9 +1865,9 @@ def eval_mapping(ref_file, sam_file, paramdict):
             sys.stderr.write('\nInvalid parameters. Paramater --save_query_names must be used with paramters --output and -a')
             exit()
 
-    calcNewAnnotations = False
+    calcNewAnnotations = 0
     if '--calc_new_annotations' in paramdict:
-        calcNewAnnotations = True
+        calcNewAnnotations = paramdict['--calc_new_annotations'][0]
 
     if '-o' in paramdict:
         out_filename = paramdict['-o'][0]
@@ -1662,6 +1900,18 @@ def eval_mapping(ref_file, sam_file, paramdict):
         with open(annotation_report_filename, 'w+') as annr_file:
             annr_file.write(report.getAnnotationReport())
             annr_file.close()
+
+    # For debugging purposes
+    if len(report.reads2check) > 0:
+        with open('reads2check.txt', 'w+') as r2c_file:
+            for line in report.reads2check:
+                r2c_file.write(line + '\n')
+            r2c_file.close()
+
+        with open('annotations2check.txt', 'w+') as a2c_file:
+            for line in report.annotations2check:
+                a2c_file.write(line + '\n')
+            a2c_file.close()        
 
     if save_qnames:
         with open(hitone_filename, 'w+') as hitone_file:
@@ -1947,9 +2197,13 @@ if __name__ == '__main__':
             sys.stderr.write('                 on an annotation. The number of bases outside an annotation is not take into account in this case\n')
             sys.stderr.write('--leave_chrom_names : do not preprocess chromosome names in SAM, reference and annotation files\n')
             sys.stderr.write('                      Chromosome names are by default preprocessed to make them match the format "chr[designation]"\n')
-            sys.stderr.write('--calc_new_annotations: calculate potential new annotations, if a sufficient number of alignments (default 3)\n')
-            sys.stderr.write('                        better fits a combination of exons then any existing annotation, that combination\n')
-            sys.stderr.write('                        of exons is suggested as a new annotation\n')
+            sys.stderr.write('--calc_new_annotations [LEVEL]: calculate potential new annotations, if a sufficient number of alignments (default 3)\n')
+            sys.stderr.write('                                better fits a combination of exons then any existing annotation, that combination\n')
+            sys.stderr.write('                                of exons is suggested as a new annotation\n')
+            sys.stderr.write('                        LEVEL:  NA_NO_NEW_ANNOTATINS = 0 (default)\n')
+            sys.stderr.write('                                NA_SKIP_INTRONS = 1\n')
+            sys.stderr.write('                                NA_COMBINED_ANNOTATIONS_1 = 2\n')
+            sys.stderr.write('                                NA_COMBINED_ANNOTATIONS_2 = 4\n')
             sys.stderr.write('--no_multiprocessing: disable multiprocessing - slower execution, but usefull for testing\n')
             sys.stderr.write('\n')
             exit(1)
